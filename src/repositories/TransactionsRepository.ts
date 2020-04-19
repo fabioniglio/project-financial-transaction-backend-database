@@ -19,11 +19,11 @@ class TransactionsRepository extends Repository<Transaction> {
         switch (transaction.type) {
           case 'income':
             // eslint-disable-next-line no-param-reassign
-            sumBalance.income += transaction.value;
+            sumBalance.income += Number(transaction.value);
             break;
           case 'outcome':
             // eslint-disable-next-line no-param-reassign
-            sumBalance.outcome += transaction.value;
+            sumBalance.outcome += Number(transaction.value);
             break;
           default:
             break;

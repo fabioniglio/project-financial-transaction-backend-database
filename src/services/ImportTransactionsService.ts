@@ -1,10 +1,9 @@
-import path from 'path';
+import { getCustomRepository, getRepository, In } from 'typeorm';
 import fs from 'fs';
-import csv from 'csv-parse';
+import csvParser from 'csv-parse';
 import Transaction from '../models/Transaction';
-import CreateTransactionService from './CreateTransactionService';
-
-import uploadConfig from '../config/upload';
+import Category from '../models/Category';
+import TransactionRepository from '../repositories/TransactionsRepository';
 
 interface TransactionDTO {
   title: string;
@@ -16,32 +15,77 @@ interface TransactionDTO {
 class ImportTransactionsService {
   async execute(csvFileName: string): Promise<Transaction[]> {
     // TODO
-    const csvFile = path.join(uploadConfig.directory, csvFileName);
-    const createTransactionService = new CreateTransactionService();
+    const transactionRepository = getCustomRepository(TransactionRepository);
+    const categoriesRepository = getRepository(Category);
 
     const transactions: TransactionDTO[] = [];
-    const transactionsCreated: Transaction[] = [];
+    const categories: string[] = [];
 
-    const stream = fs
-      .createReadStream(csvFile)
-      .pipe(csv({ columns: true, from_line: 1, trim: true }));
+    const contactsReadStream = fs.createReadStream(csvFileName);
 
-    stream.on('data', row => {
-      transactions.push(row);
+    const parsers = csvParser({
+      from_line: 2,
+    });
+    const parseCSV = contactsReadStream.pipe(parsers);
+
+    parseCSV.on('data', async line => {
+      const [title, type, value, category] = line.map((cell: string) =>
+        cell.trim(),
+      );
+
+      if (!title || !type || !value) {
+        return;
+      }
+
+      categories.push(category);
+
+      transactions.push({ title, type, value, category });
     });
 
     await new Promise(resolve => {
-      stream.on('end', resolve);
+      parseCSV.on('end', resolve);
     });
-    // eslint-disable-next-line no-restricted-syntax
-    for (const item of transactions) {
-      /* eslint-disable no-await-in-loop */
-      const transactionAdd = await createTransactionService.execute(item);
-      /* eslint-enable no-await-in-loop */
-      transactionsCreated.push(transactionAdd);
-    }
 
-    return transactionsCreated;
+    const existentCategories = await categoriesRepository.find({
+      where: {
+        title: In(categories),
+      },
+    });
+
+    const existentCategoriesTitles = existentCategories.map(
+      (category: Category) => category.title,
+    );
+
+    const addCategoryTitles = categories
+      .filter(category => !existentCategoriesTitles.includes(category))
+      .filter((value, index, self) => self.indexOf(value) === index);
+
+    const newCategories = categoriesRepository.create(
+      addCategoryTitles.map(title => ({
+        title,
+      })),
+    );
+
+    await categoriesRepository.save(newCategories);
+
+    const finalCategories = [...newCategories, ...existentCategories];
+
+    const createdTransactions = transactionRepository.create(
+      transactions.map(transaction => ({
+        title: transaction.title,
+        type: transaction.type,
+        value: transaction.value,
+        category: finalCategories.find(
+          category => category.title === transaction.category,
+        ),
+      })),
+    );
+
+    await transactionRepository.save(createdTransactions);
+
+    await fs.promises.unlink(csvFileName);
+
+    return createdTransactions;
   }
 }
 

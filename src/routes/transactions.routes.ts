@@ -51,7 +51,7 @@ transactionsRouter.post(
   upload.single('file'),
   async (request, response) => {
     const uploadCsv = new ImportTransactionsService();
-    const res = await uploadCsv.execute(request.file.filename);
+    const res = await uploadCsv.execute(request.file.path);
     return response.json(res);
   },
 );

@@ -27,25 +27,25 @@ class CreateTransactionService {
     });
 
     if (!findCategory) {
-      findCategory = await categoryRepository.save({
+      findCategory = await categoryRepository.create({
         title: category,
       });
+
+      await categoryRepository.save(findCategory);
     }
 
     const transactionRepository = getCustomRepository(TransactionRepository);
 
-    const balance = await transactionRepository.getBalance();
+    const { total } = await transactionRepository.getBalance();
 
-    if (type === 'outcome') {
-      if (balance.total - value < 0) {
-        throw new AppError('Balance Error');
-      }
+    if (type === 'outcome' && total - value < 0) {
+      throw new AppError('Balance Error');
     }
     const transaction = transactionRepository.create({
       title,
       value,
       type,
-      category_id: findCategory.id,
+      category: findCategory,
     });
 
     await transactionRepository.save(transaction);
